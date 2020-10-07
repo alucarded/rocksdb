@@ -1181,6 +1181,92 @@ jint Java_org_rocksdb_RocksDB_getDirect(JNIEnv* env, jobject /*jdb*/,
       jkey, jkey_off, jkey_len, jval, jval_off, jval_len, &has_exception);
 }
 
+jlongArray rocksdb_get_unsafe_helper(
+    JNIEnv* env, ROCKSDB_NAMESPACE::DB* db,
+    const ROCKSDB_NAMESPACE::ReadOptions& read_options,
+    ROCKSDB_NAMESPACE::ColumnFamilyHandle* column_family_handle,
+    jbyteArray jkey, jint jkey_off, jint jkey_len, bool* has_exception) {
+    std::cerr << "0" << std::endl;
+  jbyte* key = new jbyte[jkey_len];
+  env->GetByteArrayRegion(jkey, jkey_off, jkey_len, key);
+  if (env->ExceptionCheck()) {
+    // exception thrown: OutOfMemoryError
+    delete[] key;
+    *has_exception = true;
+    return nullptr;
+  }
+  ROCKSDB_NAMESPACE::Slice key_slice(reinterpret_cast<char*>(key), jkey_len);
+
+std::cerr << "1" << std::endl;
+  std::string cvalue;
+  ROCKSDB_NAMESPACE::Status s;
+  s = db->Get(read_options, column_family_handle, key_slice, &cvalue);
+//  if (ps_value.IsPinned()) {
+//    std::cerr << "SLICE IS PINNED!!" << std::endl;
+//  }
+  // cleanup
+  delete[] key;
+std::cerr << "2" << std::endl;
+  if (s.IsNotFound()) {
+    *has_exception = false;
+    return nullptr;
+  } else if (!s.ok()) {
+    *has_exception = true;
+    // Here since we are throwing a Java exception from c++ side.
+    // As a result, c++ does not know calling this function will in fact
+    // throwing an exception.  As a result, the execution flow will
+    // not stop here, and codes after this throw will still be
+    // executed.
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
+
+    // Return a dummy const value to avoid compilation error, although
+    // java side might not have a chance to get the return value :)
+    return nullptr;
+  }
+std::cerr << "3" << std::endl;
+  // TODO: check if we need to copy
+  char* ret = new char[cvalue.size()];
+  memcpy(ret, cvalue.c_str(), cvalue.size());
+std::cerr << "4" << std::endl;
+  jlong jsz = static_cast<jlong>(cvalue.size());
+  // TODO: exception checks
+  jlongArray jret_arr = env->NewLongArray(2);
+  env->SetLongArrayRegion(
+      jret_arr, 0, 1, const_cast<jlong*>(reinterpret_cast<const jlong*>(ret)));
+  env->SetLongArrayRegion(
+      jret_arr, 1, 1, const_cast<jlong*>(reinterpret_cast<const jlong*>(&jsz)));
+  *has_exception = false;
+  std::cerr << "5" << std::endl;
+  return jret_arr;
+}
+
+/*
+ * Class:     org_rocksdb_RocksDB
+ * Method:    getUnsafe
+ * Signature: (JJ[BIIJ)J
+ */
+jlongArray Java_org_rocksdb_RocksDB_getUnsafe
+  (JNIEnv *env, jclass, jlong jdb_handle, jlong jropt_handle,
+  jbyteArray jkey, jint jkey_off, jint jkey_len, jlong jcf_handle) {
+  auto* db_handle = reinterpret_cast<ROCKSDB_NAMESPACE::DB*>(jdb_handle);
+  auto& ro_opt =
+      *reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jropt_handle);
+  auto* cf_handle =
+      reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
+  if (cf_handle != nullptr) {
+    bool has_exception = false;
+    return rocksdb_get_unsafe_helper(env, db_handle, ro_opt, cf_handle,
+        jkey, jkey_off, jkey_len,
+        &has_exception);
+  } else {
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(
+        env, ROCKSDB_NAMESPACE::Status::InvalidArgument(
+                 "Invalid ColumnFamilyHandle."));
+    // will never be evaluated
+    return nullptr;
+  }
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // ROCKSDB_NAMESPACE::DB::Merge
 

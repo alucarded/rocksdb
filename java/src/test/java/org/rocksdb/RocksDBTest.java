@@ -7,12 +7,15 @@ package org.rocksdb;
 import org.junit.*;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
+import sun.misc.Unsafe;
 
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.*;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.fail;
 
 public class RocksDBTest {
@@ -247,6 +250,33 @@ public class RocksDBTest {
       // compare
       Assert.assertTrue(value0.isSamePayload(db.get(key3.data, key3.offset, key3.len)));
       Assert.assertTrue(value1.isSamePayload(db.get(key4.data, key4.offset, key4.len)));
+    }
+  }
+
+  @Test
+  public void getUnsafe() throws RocksDBException {
+    Unsafe unsafe;
+    try {
+      Field f = Unsafe.class.getDeclaredField("theUnsafe");
+      f.setAccessible(true);
+      unsafe = (Unsafe) f.get(null);
+    } catch(Exception e) {
+      throw new RuntimeException(e);
+    }
+    System.err.println("start");
+    try (final RocksDB db = RocksDB.open(dbFolder.getRoot().getAbsolutePath());
+         final ReadOptions optr = new ReadOptions()) {
+      final byte[] key1 = "key1".getBytes();
+      final byte[] value1 = "value1".getBytes();
+      db.put(key1, value1);
+      System.err.println("before");
+//      long[] memory = db.getUnsafe(db.getDefaultColumnFamily(), optr, key1);
+//      System.err.println("after");
+//      byte[] ret = new byte[(int)memory[1]];
+//      for (int i = 0; i < memory[1]; ++i) {
+//        ret[i] = unsafe.getByte(memory[0] + i);
+//      }
+//      assertArrayEquals(value1, ret);
     }
   }
 
